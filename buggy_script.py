@@ -14,3 +14,5 @@ samples2 = sample_collector_parallel.sample(num_episodes=3, seed=1234)
 
 # ... but the below assert fails :(
 np.testing.assert_allclose(samples1, samples2)
+
+print(samples1)
