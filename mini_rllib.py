@@ -1,6 +1,6 @@
 import functools
 from functools import update_wrapper
-import gym
+import gymnasium as gym
 from joblib import Parallel
 import numpy as np
 import random
@@ -65,9 +65,22 @@ class SlipperyRoomEnv(gym.Env):
 
     def seed(self, seed=None):
         self.np_random, actual_seed = seeding.np_random(seed)
-        return [actual_seed]    
+        return [actual_seed]
 
-    def step(self, action: int) -> Tuple[int, float, bool, dict]:
+    def reset(self, seed=None, options=None) -> Tuple[int, dict]:
+        """Resets the env and returns the initial observation of the new episode.
+
+        Returns:
+            int: The first/initial observation in the new episode.
+        """
+        if seed is not None:
+            np.random.seed(seed + 1)
+
+        self.ts = 0
+        self.robot_pos = [0, 0]
+        return self._get_obs(), {}
+
+    def step(self, action: int) -> Tuple[int, float, bool, bool, dict]:
         """Performs one step in the ongoing episode using `action`.
 
         Args:
@@ -103,7 +116,7 @@ class SlipperyRoomEnv(gym.Env):
 
         # Reward/done function.
         reward = -0.1
-        done = False
+        truncated = terminated = False
         # Check room boundaries and obstacles.
         if self.robot_pos[0] < 0 or self.robot_pos[0] >= 8 or \
                 self.robot_pos[1] < 0 or self.robot_pos[1] >= 8 or \
@@ -113,23 +126,13 @@ class SlipperyRoomEnv(gym.Env):
         # Check goal.
         elif self.MAP_[self.robot_pos[0]][self.robot_pos[1]] == "G":
             reward = 10.0
-            done = True
+            terminated = True
 
         # Determine, whether episode is over.
-        if done is False:
-            done = self.ts >= self.max_timesteps
+        if terminated is False:
+            truncated = self.ts >= self.max_timesteps
 
-        return self._get_obs(), reward, done, {}
-
-    def reset(self) -> int:
-        """Resets the env and returns the initial observation of the new episode.
-
-        Returns:
-            int: The first/initial observation in the new episode.
-        """
-        self.ts = 0
-        self.robot_pos = [0, 0]
-        return self._get_obs()
+        return self._get_obs(), reward, terminated, truncated, {}
 
     def _get_obs(self) -> int:
         """Translates the stored robot position into a discrete (int) value.
@@ -207,7 +210,6 @@ class SampleCollector:
             np.ndarray: The observation batch collected by running through our
                 n envs in parallel.
         """
-
         random_state = check_random_state(seed)
         episode_seeds = random_state.randint(0, 1e9, size=num_episodes)
 
@@ -233,7 +235,6 @@ class SampleCollector:
             # the custom seed() method is called to set the np_random and seed of the env.
             env.seed(int(episode_seed))
             obs = env.reset()
-            
             observations.append(obs)
             done = False
             while not done:
