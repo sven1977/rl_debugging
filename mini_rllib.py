@@ -5,6 +5,7 @@ from joblib import Parallel
 import numpy as np
 import random
 from typing import Optional, Tuple
+from gym.utils import seeding
 
 
 class SlipperyRoomEnv(gym.Env):
@@ -59,7 +60,12 @@ class SlipperyRoomEnv(gym.Env):
         self.is_slippery = config.get("is_slippery", True)
         # The maximum time steps per episode.
         self.max_timesteps = 100
+        self.np_random = None
         self.reset()
+
+    def seed(self, seed=None):
+        self.np_random, actual_seed = seeding.np_random(seed)
+        return [actual_seed]    
 
     def step(self, action: int) -> Tuple[int, float, bool, dict]:
         """Performs one step in the ongoing episode using `action`.
@@ -77,8 +83,8 @@ class SlipperyRoomEnv(gym.Env):
 
         # If env is slippery, change the action to a random one in 30%
         # of the cases.
-        if self.is_slippery and random.random() < 0.3:
-            action = np.random.randint(0, 3)
+        if self.is_slippery and self.np_random.random() < 0.3:
+            action = self.np_random.randint(0, 3)
 
         # Up.
         if action == 0:
@@ -203,30 +209,42 @@ class SampleCollector:
         """
 
         random_state = check_random_state(seed)
+        episode_seeds = random_state.randint(0, 1e9, size=num_episodes)
+
+        seeds = []
+        for i in range(self.num_jobs):
+            seeds.append(episode_seeds[i::self.num_jobs])
 
         assert num_episodes % self.num_jobs == 0
         n = num_episodes // self.num_jobs
-        observations = Parallel(n_jobs=self.num_jobs)(delayed(self._run_n_episodes)(
-            n, env_idx, random_state) for env_idx in range(len(self.envs)))
+        observations = Parallel(n_jobs=self.num_jobs)(delayed(self._run_n_episodes)(n, env_idx, seeds[env_idx])
+             for env_idx in range(len(self.envs)))
         observations = np.concatenate(observations, axis=0)
-
         return observations
 
-    def _run_n_episodes(self, n, env_idx, random_state: np.random.RandomState):
+    def _run_n_episodes(self, n, env_idx, seeds_for_this_worker) -> np.ndarray:
+        # grab the respective environment 
         num_episodes = 0
-        seed = random_state.randint(1e9)
-        self.envs[env_idx].seed(seed)
-        np.random.seed(seed + 1)
+        env = self.envs[env_idx]
+        observations = []
 
-        observations = [self.envs[env_idx].reset()]
-        while True:
-            action = np.random.randint(0, 3)
-            obs, reward, done, infos = self.envs[env_idx].step(action)
-            if done:
-                num_episodes += 1
-                if num_episodes >= n:
-                    break
-                obs = self.envs[env_idx].reset()
+        for episode_seed in seeds_for_this_worker:
+            # set the seed for the respective worker
+            # the custom seed() method is called to set the np_random and seed of the env.
+            env.seed(int(episode_seed))
+            obs = env.reset()
+            
             observations.append(obs)
+            done = False
+            while not done:
+                action = env.np_random.randint(env.action_space.n)
+                obs, reward, done, infos = env.step(action)
+                if done:
+                    num_episodes += 1
+                    if num_episodes >= n:
+                        break
+                    obs = env.reset()
+                    break # I believe this break is needed to break out of the innter loop still as an FYI
+                observations.append(obs)
 
         return np.array(observations)
