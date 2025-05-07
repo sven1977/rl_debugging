@@ -58,8 +58,20 @@ class SlipperyRoomEnv(gym.Env):
         # Stochastic actions?
         self.is_slippery = config.get("is_slippery", True)
         # The maximum time steps per episode.
-        self.max_timesteps = 100
-        self.reset()
+        self.max_timesteps = 50
+
+    def reset(self, seed=None, options=None) -> Tuple[int, dict]:
+        """Resets the env and returns the initial observation of the new episode.
+
+        Returns:
+            int: The first/initial observation in the new episode.
+        """
+        if seed is not None:
+            np.random.seed(seed + 1)
+
+        self.ts = 0
+        self.robot_pos = [0, 0]
+        return self._get_obs(), {}
 
     def step(self, action: int) -> Tuple[int, float, bool, bool, dict]:
         """Performs one step in the ongoing episode using `action`.
@@ -114,19 +126,6 @@ class SlipperyRoomEnv(gym.Env):
             truncated = self.ts >= self.max_timesteps
 
         return self._get_obs(), reward, terminated, truncated, {}
-
-    def reset(self, seed=None, options=None) -> int:
-        """Resets the env and returns the initial observation of the new episode.
-
-        Returns:
-            int: The first/initial observation in the new episode.
-        """
-        # Set the `seed` through the parent method.
-        super().reset(seed=seed, options=options)
-
-        self.ts = 0
-        self.robot_pos = [0, 0]
-        return self._get_obs(), {}
 
     def _get_obs(self) -> int:
         """Translates the stored robot position into a discrete (int) value.
