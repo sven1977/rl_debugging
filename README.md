@@ -1,3 +1,14 @@
+**SETUP**
+
+```
+pip install gymnasium
+git clone https://github.com/sven1977/rl_debugging
+cd rl_debugging
+python buggy_script.py
+```
+
+**INSTRUCTIONS**
+
 The `buggy_script.py` file uses the SampleCollector class from `mini_rllib.py`
 (all located in this root directory here) to collect observation samples
 in parallel from n RL environments or in sequence from a single environment.

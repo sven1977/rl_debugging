@@ -1,6 +1,6 @@
 import functools
 from functools import update_wrapper
-import gym
+import gymnasium as gym
 from joblib import Parallel
 import numpy as np
 import random
@@ -61,7 +61,7 @@ class SlipperyRoomEnv(gym.Env):
         self.max_timesteps = 100
         self.reset()
 
-    def step(self, action: int) -> Tuple[int, float, bool, dict]:
+    def step(self, action: int) -> Tuple[int, float, bool, bool, dict]:
         """Performs one step in the ongoing episode using `action`.
 
         Args:
@@ -97,7 +97,7 @@ class SlipperyRoomEnv(gym.Env):
 
         # Reward/done function.
         reward = -0.1
-        done = False
+        truncated = terminated = False
         # Check room boundaries and obstacles.
         if self.robot_pos[0] < 0 or self.robot_pos[0] >= 8 or \
                 self.robot_pos[1] < 0 or self.robot_pos[1] >= 8 or \
@@ -107,23 +107,26 @@ class SlipperyRoomEnv(gym.Env):
         # Check goal.
         elif self.MAP_[self.robot_pos[0]][self.robot_pos[1]] == "G":
             reward = 10.0
-            done = True
+            terminated = True
 
         # Determine, whether episode is over.
-        if done is False:
-            done = self.ts >= self.max_timesteps
+        if terminated is False:
+            truncated = self.ts >= self.max_timesteps
 
-        return self._get_obs(), reward, done, {}
+        return self._get_obs(), reward, terminated, truncated, {}
 
-    def reset(self) -> int:
+    def reset(self, seed=None, options=None) -> int:
         """Resets the env and returns the initial observation of the new episode.
 
         Returns:
             int: The first/initial observation in the new episode.
         """
+        # Set the `seed` through the parent method.
+        super().reset(seed=seed, options=options)
+
         self.ts = 0
         self.robot_pos = [0, 0]
-        return self._get_obs()
+        return self._get_obs(), {}
 
     def _get_obs(self) -> int:
         """Translates the stored robot position into a discrete (int) value.
@@ -201,7 +204,6 @@ class SampleCollector:
             np.ndarray: The observation batch collected by running through our
                 n envs in parallel.
         """
-
         random_state = check_random_state(seed)
 
         assert num_episodes % self.num_jobs == 0
@@ -215,18 +217,19 @@ class SampleCollector:
     def _run_n_episodes(self, n, env_idx, random_state: np.random.RandomState):
         num_episodes = 0
         seed = random_state.randint(1e9)
-        self.envs[env_idx].seed(seed)
         np.random.seed(seed + 1)
 
-        observations = [self.envs[env_idx].reset()]
+        obs, _ = self.envs[env_idx].reset(seed=seed)
+
+        observations = [obs]
         while True:
             action = np.random.randint(0, 3)
-            obs, reward, done, infos = self.envs[env_idx].step(action)
-            if done:
+            obs, reward, terminated, truncated, _ = self.envs[env_idx].step(action)
+            if terminated or truncated:
                 num_episodes += 1
                 if num_episodes >= n:
                     break
-                obs = self.envs[env_idx].reset()
+                obs, _ = self.envs[env_idx].reset()
             observations.append(obs)
 
         return np.array(observations)
